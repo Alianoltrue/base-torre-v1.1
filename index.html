@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    
+    <!-- Metadados PWA e SEO -->
+    <title>Defesa da Base Triangular</title>
+    <meta name="description" content="Um jogo de Tower Defense viciante onde você protege sua base de hordas de inimigos.">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#f0ad4e">
+    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+
+    <style>
+        body {
+            margin: 0; padding: 0; display: flex; flex-direction: column; justify-content: center; align-items: center;
+            height: 100vh; background-color: #1a1a1a; color: white;
+            font-family: 'Courier New', Courier, monospace; overflow: hidden;
+            touch-action: none;
+        }
+        canvas { background-color: #0d0d0d; border: 2px solid #555; }
+        .hidden { display: none !important; }
+
+        /* Telas Principais */
+        #main-menu, #game-over-screen {
+            display: flex; flex-direction: column; align-items: center; gap: 20px;
+        }
+        #main-menu .button-group { display: flex; flex-direction: column; gap: 15px; }
+        h1 { font-size: 48px; color: #f0ad4e; text-shadow: 2px 2px #000; }
+        .menu-button {
+            background-color: #444; color: white; border: 2px solid #777;
+            padding: 15px 30px; font-size: 20px; cursor: pointer;
+            border-radius: 5px; transition: all 0.2s; min-width: 250px; text-align: center;
+        }
+        .menu-button:hover { background-color: #5c5c5c; border-color: #fff; }
+        #reset-button { background-color: #c9184a; font-size: 14px; padding: 8px 15px; }
+
+        /* UI do Jogo */
+        .ui-container { position: absolute; }
+        #top-right-ui { top: 10px; right: 10px; background-color: rgba(0,0,0,0.7); padding: 10px; border-radius: 5px; border: 1px solid #444; text-align: right; }
+        #bottom-right-ui { bottom: 20px; right: 20px; display: flex; flex-direction: column; gap: 15px; align-items: center; }
+        #shop-icon, #mass-upgrade-icon {
+            background-color: #f0ad4e; color: #1a1a1a; width: 60px; height: 60px;
+            border-radius: 50%; display: flex; justify-content: center; align-items: center;
+            cursor: pointer; font-size: 32px; border: 2px solid #fff; user-select: none;
+            transition: transform 0.2s;
+        }
+        #shop-icon:hover, #mass-upgrade-icon:hover { transform: scale(1.1); }
+        #boss-ui h3 { margin: 5px 0 0 0; color: #dc3545; }
+        
+        /* Modais */
+        .modal {
+            display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            background-color: #2a2a2a; padding: 20px; border: 2px solid #666;
+            border-radius: 10px; z-index: 100; width: 80vw; max-width: 500px; max-height: 80vh; overflow-y: auto;
+        }
+        .modal-title { text-align: center; font-size: 20px; margin-bottom: 20px; }
+        .shop-item, #upgrade-button, .mass-upgrade-item, .perm-upgrade-item, #sell-button {
+            background-color: #444; padding: 15px; margin: 10px 0; border-radius: 8px;
+            border: 1px solid #777; transition: background-color 0.2s; cursor: pointer;
+        }
+        #sell-button { background-color: #dc3545; }
+        .shop-item:hover, #upgrade-button:not(:disabled):hover, .mass-upgrade-item:not(.disabled):hover, .perm-upgrade-item:not(.disabled):not(.purchased):hover, #sell-button:hover {
+            background-color: #5c5c5c;
+        }
+        .perm-upgrade-item:not(.disabled):not(.purchased) { cursor: pointer; }
+        .item-title { font-weight: bold; }
+        .item-desc { font-size: 13px; color: #ccc; margin-top: 5px; }
+        .cost { float: right; color: #ffd700; }
+        .energy-cost { float: right; color: #9d4edd; }
+        .close-button { position: absolute; top: 10px; right: 15px; font-size: 30px; cursor: pointer; padding: 5px; }
+        .disabled { opacity: 0.5; cursor: not-allowed !important; }
+        .purchased { background-color: #386641; border-color: #6a994e; }
+        .purchased .energy-cost { text-decoration: line-through; }
+    </style>
+</head>
+<body>
+    <!-- TELAS PRINCIPAIS -->
+    <div id="main-menu">
+        <h1>Defesa da Base</h1>
+        <div class="button-group">
+            <button class="menu-button" onclick="startGame()">Iniciar Jogo</button>
+            <button class="menu-button" onclick="openPermanentUpgradesModal()">Melhorias (<span id="total-energy-menu">0</span> ⚡)</button>
+        </div>
+        <button id="reset-button" class="menu-button" onclick="resetProgress()">Resetar Progresso</button>
+    </div>
+    <div id="game-over-screen" class="hidden">
+        <h1>FIM DE JOGO</h1>
+        <h3>Energia Coletada: <span id="energy-collected">0</span> ⚡</h3>
+        <button class="menu-button" onclick="returnToMenu()">Voltar ao Menu</button>
+    </div>
+
+    <!-- ELEMENTOS DO JOGO (escondidos inicialmente) -->
+    <canvas id="gameCanvas" class="hidden"></canvas>
+    <div id="game-ui" class="hidden">
+        <div id="top-right-ui" class="ui-container">
+            <div>Base HP: <span id="base-hp">20</span></div>
+            <div>Moedas: <span id="coins">0</span></div>
+            <div>Tempo: <span id="game-time">0</span>s</div>
+            <div>Dificuldade: <span id="difficulty-level">0</span></div>
+            <div id="boss-ui" class="hidden"><h3>Chefe: <span id="boss-hp">0</span></h3></div>
+        </div>
+        <div id="bottom-right-ui" class="ui-container">
+            <div id="mass-upgrade-icon">⚡</div>
+            <div id="shop-icon">🛒</div>
+        </div>
+    </div>
+    
+    <!-- MODAIS -->
+    <div id="shop-modal" class="modal"><span class="close-button" onclick="closeAllModals()">×</span><div class="modal-title">Loja</div><div id="shop-list"></div></div>
+    <div id="upgrade-modal" class="modal"><span class="close-button" onclick="closeAllModals()">×</span><div class="modal-title">Melhorar Torre</div><div id="upgrade-info"></div><button id="upgrade-button">Melhorar</button><button id="sell-button" class="hidden" onclick="sellTower()">Vender</button></div>
+    <div id="mass-upgrade-modal" class="modal"><span class="close-button" onclick="closeAllModals()">×</span><div class="modal-title">Melhorar Todas as Torres</div><div id="mass-upgrade-list"></div></div>
+    <div id="permanent-upgrades-modal" class="modal">
+        <span class="close-button" onclick="closeAllModals()">×</span>
+        <div class="modal-title">Melhorias Permanentes</div>
+        <h3>Energia Total: <span id="total-energy-upgrades">0</span> ⚡</h3>
+        <div id="permanent-upgrades-list"></div>
+    </div>
+
+<script>
+// ================================= ELEMENTOS DA UI =================================
+const canvas = document.getElementById('gameCanvas'), ctx = canvas.getContext('2d');
+const mainMenu = document.getElementById('main-menu'), gameOverScreen = document.getElementById('game-over-screen');
+const gameUI = document.getElementById('game-ui'), bossUI = document.getElementById('boss-ui'), bossHpEl = document.getElementById('boss-hp');
+const baseHpEl=document.getElementById('base-hp'), coinsEl=document.getElementById('coins'), gameTimeEl = document.getElementById('game-time'), difficultyLevelEl=document.getElementById('difficulty-level');
+const shopIcon=document.getElementById('shop-icon'), shopModal=document.getElementById('shop-modal'), shopList=document.getElementById('shop-list');
+const upgradeModal=document.getElementById('upgrade-modal'), upgradeInfoEl=document.getElementById('upgrade-info'), upgradeButton=document.getElementById('upgrade-button'), sellButton = document.getElementById('sell-button');
+const massUpgradeIcon=document.getElementById('mass-upgrade-icon'), massUpgradeModal=document.getElementById('mass-upgrade-modal'), massUpgradeList = document.getElementById('mass-upgrade-list');
+const permUpgradesModal = document.getElementById('permanent-upgrades-modal'), permUpgradesList = document.getElementById('permanent-upgrades-list');
+const totalEnergyMenuEl = document.getElementById('total-energy-menu'), totalEnergyUpgradesEl = document.getElementById('total-energy-upgrades'), energyCollectedEl = document.getElementById('energy-collected');
+
+// ================== CONFIGURAÇÕES DO JOGO ==================
+const ASPECT_RATIO = 16 / 9;
+const WORLD_WIDTH = 2800;
+const WORLD_HEIGHT = WORLD_WIDTH / ASPECT_RATIO;
+const MAX_PARTICLES = 200;
+let camera = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2, zoom: 1 };
+
+// ================== PROGRESSÃO PERMANENTE (META-GAME) ==================
+let permanentUpgrades = {};
+const UPGRADES_CONFIG = [
+    {id: 'startCoins1', title: 'Fundos Iniciais', desc: 'Comece cada jogo com 10 moedas extras.', cost: 40},
+    {id: 'baseHp1', title: 'Base Reforçada', desc: 'Aumenta a vida inicial da base em 10.', cost: 60},
+    {id: 'interest', title: 'Sistema Bancário', desc: 'Gere 1 moeda de juros para cada 100 que você possuir, a cada 5 segundos.', cost: 250},
+    {id: 'towerCostDown', title: 'Licença de Construtor', desc: 'Reduz o custo de construção de todas as torres em 1 (mínimo de 1).', cost: 400},
+    {id: 'towerRepair', title: 'Auto-Reparo', desc: 'Todas as torres regeneram 1 de vida a cada 10 segundos.', cost: 300},
+    {id: 'towerMaxHpUp', title: 'Ligas Reforçadas', desc: 'Aumenta a vida máxima de todas as torres em 5.', cost: 250},
+    {id: 'recycling', title: 'Programa de Reciclagem', desc: 'Permite vender torres por 50% de seu custo de construção.', cost: 150},
+    {id: 'scavenger', title: 'Protocolos de Coleta', desc: 'Inimigos derrotados têm 10% de chance de dropar 1 moeda.', cost: 300},
+    {id: 'projDmg1', title: 'Munição Melhorada (Projétil)', desc: 'Torres de projétil causam +1 de dano.', cost: 50},
+    {id: 'projPierce', title: 'Projéteis Perfurantes (3 Alvos)', desc: 'Disparos da torre de projétil atravessam até 3 inimigos.', cost: 250},
+    {id: 'rocketDmg1', title: 'Explosivos Potentes (Foguete)', desc: 'Torres de foguete causam +1 de dano.', cost: 70},
+    {id: 'rocketAoe', title: 'Explosões Maiores', desc: 'A área de efeito dos foguetes é 50% maior.', cost: 200},
+    {id: 'slowPower', title: 'Criogenia Avançada (Lentidão)', desc: 'Torres de lentidão reduzem mais a velocidade inimiga (de 50% para 65%).', cost: 180},
+    {id: 'slowVulnerability', title: 'Campo de Fratura (Lentidão)', desc: 'Inimigos lentos ficam vulneráveis, recebendo 10% a mais de dano.', cost: 350},
+    {id: 'mineStun', title: 'Minas de Concussão (Mina)', desc: 'A explosão de Minas Terrestres agora atordoa inimigos sobreviventes por 2s.', cost: 220},
+    {id: 'coinGen1', title: 'Banco Central (Moeda)', desc: 'Torres de moeda geram +1 moeda.', cost: 150},
+    {id: 'coinAura', title: 'Aura de Riqueza (Moeda)', desc: 'Torres de moeda aumentam em 25% o dano de torres próximas.', cost: 300},
+    {id: 'laserRampUp', title: 'Cristais de Foco (Laser)', desc: 'Torres de Laser aumentam seu dano 50% mais rápido.', cost: 320},
+    {id: 'railgunCharge', title: 'Feixe Sobrecarregado (Canhão)', desc: 'Aumenta o dano do Canhão de Elétrons em 25%.', cost: 400},
+    {id: 'conductorNetwork', title: 'Rede Expandida (Condutora)', desc: 'Torre Condutora pode se conectar a +1 torre e o buff é 10% mais forte.', cost: 380},
+];
+
+const TOWER_TYPES = {
+    'projectile': { name: 'Projétil', desc: 'Dispara projéteis em um único alvo. Longo alcance.', cost: 3, constructor: (x, y) => new ProjectileTower(x, y) },
+    'rocket': { name: 'Foguete', desc: 'Dispara foguetes com dano em área.', cost: 5, constructor: (x, y) => new RocketTower(x, y) },
+    'slow': { name: 'Lentidão', desc: 'Reduz a velocidade dos inimigos em sua área.', cost: 6, constructor: (x, y) => new SlowTower(x, y) },
+    'coin': { name: 'Moeda', desc: 'Gera moedas passivamente.', cost: 10, constructor: (x, y) => new CoinTower(x, y) },
+    'laser': { name: 'Laser', desc: 'Causa dano crescente a um único alvo.', cost: 12, constructor: (x, y) => new LaserTower(x, y) },
+    'railgun': { name: 'Canhão', desc: 'Dispara um raio que perfura todos os inimigos em linha.', cost: 20, constructor: (x, y) => new RailgunTower(x, y) },
+    'conductor': { name: 'Condutora', desc: 'Aumenta a cadência de tiro de torres próximas.', cost: 15, constructor: (x, y) => new ConductorTower(x, y) },
+    'mine': { name: 'Mina', desc: 'Explode ao contato, causando dano em área. Uso único.', cost: 5, constructor: (x, y) => new LandMine(x, y) }
+};
+
+function loadProgress() {
+    const saved = localStorage.getItem('triangularDefenseProgress');
+    if (saved) {
+        permanentUpgrades = JSON.parse(saved);
+        UPGRADES_CONFIG.forEach(upg => { if (permanentUpgrades[upg.id] === undefined) permanentUpgrades[upg.id] = false; });
+    } else {
+        permanentUpgrades = { energy: 0 };
+        UPGRADES_CONFIG.forEach(upg => { permanentUpgrades[upg.id] = false; });
+    }
+    updateEnergyUI();
+}
+
+function saveProgress() {
+    localStorage.setItem('triangularDefenseProgress', JSON.stringify(permanentUpgrades));
+    updateEnergyUI();
+}
+
+function resetProgress() {
+    if (confirm("Você tem certeza que deseja resetar todo o seu progresso? Esta ação é irreversível.")) {
+        localStorage.removeItem('triangularDefenseProgress');
+        window.location.reload();
+    }
+}
+
+function updateEnergyUI() {
+    totalEnergyMenuEl.textContent = permanentUpgrades.energy;
+    totalEnergyUpgradesEl.textContent = permanentUpgrades.energy;
+}
+
+function openPermanentUpgradesModal() {
+    if (gameState) gameState.isPaused = true;
+    permUpgradesList.innerHTML = '';
+    UPGRADES_CONFIG.forEach(upg => {
+        const canAfford = permanentUpgrades.energy >= upg.cost;
+        const isPurchased = permanentUpgrades[upg.id];
+        const item = document.createElement('div');
+        item.className = 'perm-upgrade-item';
+        if (isPurchased) item.classList.add('purchased');
+        if (!canAfford && !isPurchased) item.classList.add('disabled');
+        item.innerHTML = `<span class="item-title">${upg.title}</span><span class="energy-cost">${upg.cost} ⚡</span><div class="item-desc">${upg.desc} ${isPurchased ? '(Comprado)' : ''}</div>`;
+        if (!isPurchased) item.onclick = () => buyPermanentUpgrade(upg);
+        permUpgradesList.appendChild(item);
+    });
+    permUpgradesModal.style.display = 'block';
+}
+
+function buyPermanentUpgrade(upgrade) {
+    if (permanentUpgrades[upgrade.id] || permanentUpgrades.energy < upgrade.cost) return;
+    permanentUpgrades.energy -= upgrade.cost;
+    permanentUpgrades[upgrade.id] = true;
+    saveProgress();
+    openPermanentUpgradesModal();
+}
+
+// ================================= ESTADO E SETUP DO JOGO =================================
+let gameState, playerBase, towers, enemies, projectiles, particles, visualEffects, timers, spawnRates, enemyHpBonus, lastTime, mousePos;
+
+function resetGameState() {
+    const startHp = 20 + (permanentUpgrades.baseHp1 ? 10 : 0);
+    const startCoins = 0 + (permanentUpgrades.startCoins1 ? 10 : 0);
+    gameState = {baseHp: startHp, coins: startCoins, isPaused: false, gameOver: false, placingTower: null, selectedTowerForUpgrade: null, difficultyLevel: 0, gameTime: 0, energyCollectedThisRun: 0, animationFrameId: null, bossActive: false, bossSpawnedForLevel: -1};
+    playerBase = new PlayerBase(startHp);
+    mousePos = {x:0, y:0}; lastTime = 0;
+    timers = {coin:0, spawnBlue:0, spawnYellow:0, spawnPurple:0, spawnHealer:0, spawnKamikaze:0, difficultyScale:0, hpScale:0, interest:0, towerRepair:0};
+    spawnRates = {blue:3, yellow:5, purple:10, healer: 3, kamikaze: 6};
+    enemyHpBonus = 0;
+    towers=[], enemies=[], projectiles=[], particles=[], visualEffects=[];
+}
+
+
+// ================================= CLASSES DO JOGO (COM REDESIGN VISUAL) =================================
+class PlayerBase{constructor(startHp){this.x=WORLD_WIDTH/2;this.y=WORLD_HEIGHT/2;this.size=40;this.hp=startHp;this.maxHp=startHp}draw(){ctx.fillStyle='#eee';ctx.beginPath();ctx.moveTo(this.x,this.y-this.size);ctx.lineTo(this.x-this.size,this.y+this.size);ctx.lineTo(this.x+this.size,this.y+this.size);ctx.closePath();ctx.fill()}takeDamage(a){this.hp-=a;if(this.hp<=0)gameState.gameOver=true;}}
+class Tower{
+    constructor(x,y){this.x=x;this.y=y;this.level=1;this.maxLevel=3;this.damageMultiplier=1;this.fireRateMultiplier=1;this.hp=0;this.maxHp=0;this.recoil=0;this.rotation=0;this.size=25;this.target=null;}
+    drawBase(){ctx.save();ctx.translate(this.x,this.y);ctx.rotate(this.rotation);ctx.scale(1-this.recoil*0.1,1-this.recoil*0.1);this.drawShape();ctx.restore()}
+    drawLevels(){for(let i=0;i<this.level-1;i++){ctx.fillStyle=i===1?'gold':'white';ctx.beginPath();ctx.arc(this.x+(i*10-5),this.y+this.size*0.7,2,0,Math.PI*2);ctx.fill()}}
+    draw(){this.drawBase();this.drawLevels();if(this.recoil>0)this.recoil-=.1;if(this.hp<this.maxHp){ctx.fillStyle='red';ctx.fillRect(this.x-this.size/2,this.y-this.size/2-8,this.size,5);ctx.fillStyle='green';ctx.fillRect(this.x-this.size/2,this.y-this.size/2-8,this.size*(this.hp/this.maxHp),5)}}
+    takeDamage(a){this.hp-=a}
+    getUpgradeCost(){return Math.floor(this.baseCost*(this.level+1))}
+    tryUpgrade(){if(this.level>=this.maxLevel)return;const a=this.getUpgradeCost();if(gameState.coins>=a){gameState.coins-=a;this.applyUpgrade()}}
+    applyInitialHp(baseHp) { this.hp = baseHp + (permanentUpgrades.towerMaxHpUp ? 5 : 0); this.maxHp = this.hp; }
+    update(a) { if (this.target) { const targetAngle = Math.atan2(this.target.y - this.y, this.target.x - this.x); this.rotation = lerpAngle(this.rotation, targetAngle, 0.1); } }
+}
+class ProjectileTower extends Tower{constructor(x,y){super(x,y);this.type='projectile';this.color='#0077b6';this.baseCost=3;this.range=250;this.fireRate=1;this.damage=2+(permanentUpgrades.projDmg1?1:0);this.fireCooldown=0;this.applyInitialHp(5);}update(a){super.update(a);if(!this.target||this.target.hp<=0||Math.hypot(this.x-this.target.x,this.y-this.target.y)>this.range)this.findTarget();this.fireCooldown-=a*this.fireRateMultiplier;if(this.fireCooldown<=0)this.shoot()}findTarget(){const targets=enemies.filter(e=>Math.hypot(this.x-e.x,this.y-e.y)<this.range);this.target=targets.length>0?targets.sort((a,b)=>Math.hypot(this.x-a.x,this.y-a.y)-Math.hypot(this.x-b.x,this.y-b.y))[0]:null}shoot(){if(this.target){this.recoil=1;this.fireCooldown=this.fireRate;const px=this.x+Math.cos(this.rotation)*(this.size/2+5);const py=this.y+Math.sin(this.rotation)*(this.size/2+5);projectiles.push(new Projectile(px,py,this.target,this.damage*this.damageMultiplier))}}applyUpgrade(){this.level++;if(this.level===2)this.fireRate=0.7;else if(this.level===3)this.damage+=1}drawShape(){ctx.fillStyle=this.color;ctx.beginPath();ctx.arc(0,0,this.size/2,0,Math.PI*2);ctx.fill();ctx.fillStyle='#333';ctx.fillRect(0,-3,this.size/2+5,6)}}
+class RocketTower extends Tower{constructor(x,y){super(x,y);this.type='rocket';this.color='#d00000';this.baseCost=5;this.range=180;this.fireRate=1.5;this.damage=1+(permanentUpgrades.rocketDmg1?1:0);this.aoeRadius=40*(permanentUpgrades.rocketAoe?1.5:1);this.fireCooldown=0;this.applyInitialHp(3);}update(a){super.update(a);if(!this.target||this.target.hp<=0||Math.hypot(this.x-this.target.x,this.y-this.target.y)>this.range)this.findTarget();this.fireCooldown-=a*this.fireRateMultiplier;if(this.fireCooldown<=0)this.shoot()}findTarget(){const targets=enemies.filter(e=>Math.hypot(this.x-e.x,this.y-e.y)<this.range);this.target=targets.length>0?targets.sort((a,b)=>Math.hypot(this.x-a.x,this.y-a.y)-Math.hypot(this.x-b.x,this.y-b.y))[0]:null}shoot(){if(this.target){this.recoil=1;this.fireCooldown=this.fireRate;const px=this.x+Math.cos(this.rotation)*this.size/2;const py=this.y+Math.sin(this.rotation)*this.size/2;projectiles.push(new Rocket(px,py,this.target,this.damage*this.damageMultiplier,this.aoeRadius))}}applyUpgrade(){this.level++;if(this.level===2){this.fireRate=1.1;this.damage+=0.5}else if(this.level===3)this.range=220}drawShape(){ctx.fillStyle=this.color;ctx.beginPath();const s=this.size/2;ctx.moveTo(s,-s/2);ctx.lineTo(s,s/2);ctx.lineTo(-s,0);ctx.closePath();ctx.fill()}}
+class LaserTower extends Tower{constructor(x,y){super(x,y);this.type='laser';this.size=28;this.color='#ff00ff';this.baseCost=12;this.range=280;this.baseDamage=2;this.damageRamp=1.5*(permanentUpgrades.laserRampUp?1.5:1);this.timeOnTarget=0;this.applyInitialHp(8)}update(a){super.update(a);if(!this.target||this.target.hp<=0||Math.hypot(this.x-this.target.x,this.y-this.target.y)>this.range){this.findTarget();this.timeOnTarget=0}if(this.target){this.recoil=0.5;this.timeOnTarget+=a*this.fireRateMultiplier;const currentDps=this.baseDamage+this.timeOnTarget*this.damageRamp;this.target.takeDamage(currentDps*a*this.damageMultiplier)}}findTarget(){const t=enemies.filter(e=>Math.hypot(this.x-e.x,this.y-e.y)<this.range);if(t.length>0){t.sort((a,b)=>b.hp-a.hp);this.target=t[0]}else{this.target=null}}draw(){super.draw();if(this.target){ctx.beginPath();ctx.moveTo(this.x,this.y);ctx.lineTo(this.target.x,this.target.y);ctx.strokeStyle=this.color;ctx.lineWidth=1+this.timeOnTarget;ctx.stroke()}}applyUpgrade(){this.level++;if(this.level===2)this.baseDamage=3;else if(this.level===3)this.damageRamp*=1.5}drawShape(){ctx.fillStyle=this.color;const s=this.size/2;ctx.beginPath();ctx.moveTo(0,-s);ctx.lineTo(s,0);ctx.lineTo(0,s);ctx.lineTo(-s,0);ctx.closePath();ctx.fill()}}
+class RailgunTower extends Tower{constructor(x,y){super(x,y);this.type='railgun';this.size=30;this.color='#48cae4';this.baseCost=20;this.range=1000;this.fireRate=5;this.damage=25*(permanentUpgrades.railgunCharge?1.25:1);this.fireCooldown=0;this.applyInitialHp(10)}update(a){this.fireCooldown-=a*this.fireRateMultiplier;if(this.fireCooldown<=0)this.findTargetAndShoot();this.target=enemies.filter(e=>Math.hypot(this.x-e.x,this.y-e.y)<this.range)[0];super.update(a)}findTargetAndShoot(){this.fireCooldown=this.fireRate;this.recoil=1;const t=enemies.filter(e=>Math.hypot(this.x-e.x,this.y-e.y)<this.range);if(t.length>0){t.sort((a,b)=>Math.hypot(this.x-a.x,this.y-a.y)-Math.hypot(this.x-b.x,this.y-b.y));visualEffects.push(new RailgunBeam(this.x,this.y,this.rotation,this.damage*this.damageMultiplier))}}applyUpgrade(){this.level++;if(this.level===2)this.fireRate=4;else if(this.level===3)this.damage*=1.5}drawShape(){ctx.fillStyle='#333';const s=this.size/2;ctx.fillRect(-s/2,-s,s,s*2);ctx.fillStyle=this.color;ctx.fillRect(-s/2+2,-s,s-4,s*2-5)}}
+class CoinTower extends Tower{constructor(x,y){super(x,y);this.type='coin';this.color='#ffc300';this.baseCost=10;this.generationRate=3;this.generationAmount=1+(permanentUpgrades.coinGen1?1:0);this.generationCooldown=0;this.auraRange=permanentUpgrades.coinAura?100:0;this.auraBuff=1.25;this.applyInitialHp(7);this.rotation=0}update(a){this.generationCooldown-=a;if(this.generationCooldown<=0){this.recoil=1;gameState.coins+=this.generationAmount;this.generationCooldown=this.generationRate}this.rotation+=a*0.5}draw(){super.draw();if(this.auraRange>0){ctx.beginPath();ctx.arc(this.x,this.y,this.auraRange,0,2*Math.PI);ctx.strokeStyle='rgba(255, 215, 0, 0.3)';ctx.lineWidth=2;ctx.stroke()}}applyUpgrade(){this.level++;if(this.level===2){this.hp+=3;this.maxHp+=3}else if(this.level===3){this.generationRate=5;this.generationAmount+=1}}drawShape(){ctx.save();ctx.rotate(this.rotation);ctx.fillStyle=this.color;ctx.strokeStyle='#fff';ctx.lineWidth=2;const s=this.size/2;for(let i=0;i<4;i++){ctx.rotate(Math.PI/2);ctx.beginPath();ctx.moveTo(0,0);ctx.lineTo(s,s);ctx.lineTo(0,s*1.5);ctx.lineTo(-s,s);ctx.closePath();ctx.fill();ctx.stroke()}ctx.restore()}}
+class SlowTower extends Tower{constructor(x,y){super(x,y);this.type='slow';this.color='#8338ec';this.baseCost=6;this.range=160;this.slowFactor=permanentUpgrades.slowPower?0.35:0.5;this.applyInitialHp(3);this.pulse=0}update(a){this.pulse=(this.pulse+a)%1}draw(){super.draw();ctx.beginPath();ctx.arc(this.x,this.y,this.range,0,2*Math.PI);ctx.strokeStyle=`rgba(131,56,236,${0.2+this.pulse*0.3})`;ctx.lineWidth=1+this.pulse*3;ctx.stroke()}applyUpgrade(){this.level++;if(this.level===2){this.hp+=2;this.maxHp+=2}else if(this.level===3)this.range=240}drawShape(){const s=this.size/2;ctx.fillStyle=this.color;ctx.beginPath();for(let i=0;i<6;i++){ctx.lineTo(s*Math.cos(i*Math.PI/3),s*Math.sin(i*Math.PI/3))}ctx.closePath();ctx.fill();ctx.fillStyle='rgba(255,255,255,0.8)';ctx.beginPath();ctx.arc(0,0,s*0.4*(1+Math.sin(this.pulse*Math.PI*2)*0.2),0,Math.PI*2);ctx.fill()}}
+class LandMine extends Tower{constructor(x,y){super(x,y);this.type='mine';this.size=15;this.color='orange';this.baseCost=5;this.damage=10;this.triggerRadius=25;this.explosionRadius=40;this.applyInitialHp(1)}update(a){for(const e of enemies){if(this.hp>0&&Math.hypot(this.x-e.x,this.y-e.y)<this.triggerRadius){this.explode();return}}}explode(){this.hp=0;visualEffects.push(new ExplosionVisual(this.x,this.y,this.explosionRadius,'#ff8c00'));for(const e of enemies){if(Math.hypot(this.x-e.x,this.y-e.y)<this.explosionRadius){e.takeDamage(this.damage);if(permanentUpgrades.mineStun)e.stunTimer=2}}if(particles.length<MAX_PARTICLES)for(let i=0;i<20;i++)new Particle(this.x,this.y)}applyUpgrade(){this.level++;if(this.level===2)this.explosionRadius=55;else if(this.level===3)this.explosionRadius=70}drawShape(){ctx.fillStyle=this.color;ctx.beginPath();ctx.arc(0,0,this.size/2,0,Math.PI*2);ctx.fill();ctx.fillStyle='red';ctx.beginPath();ctx.arc(0,0,this.size/4,0,Math.PI*2);ctx.fill()}}
+class ConductorTower extends Tower{constructor(x,y){super(x,y);this.type='conductor';this.size=20;this.color='#ffc300';this.baseCost=15;this.linkRange=150;this.linkLimit=3+(permanentUpgrades.conductorNetwork?1:0);this.fireRateBuff=1.5*(permanentUpgrades.conductorNetwork?1.1:1);this.linkedTowers=[];this.applyInitialHp(12);this.pulse=0}update(a){this.pulse=(this.pulse+a*2)%1;this.findLinks()}findLinks(){this.linkedTowers=towers.filter(t=>t!==this&&!t.isBuffedByConductor&&t.fireRateMultiplier&&(Math.hypot(this.x-t.x,this.y-t.y)<this.linkRange)).sort((a,b)=>Math.hypot(this.x-a.x,this.y-a.y)-Math.hypot(this.x-b.x,this.y-b.y)).slice(0,this.linkLimit)}draw(){super.draw();this.linkedTowers.forEach(t=>{ctx.beginPath();ctx.moveTo(this.x,this.y);ctx.lineTo(t.x,t.y);ctx.strokeStyle=`rgba(255,195,0,${0.5+this.pulse*0.3})`;ctx.lineWidth=1+this.pulse*2;ctx.stroke()})}drawShape(){ctx.fillStyle=this.color;ctx.beginPath();ctx.arc(0,0,this.size/2,0,Math.PI*2);ctx.fill();ctx.fillStyle='white';ctx.beginPath();ctx.arc(0,0,this.size/4,0,Math.PI*2);ctx.fill()}}
+class Enemy{constructor(x,y){this.x=x;this.y=y;this.speed=100;this.targetedBy={projectile:0,rocket:0};this.isSlowed=false;this.slowFactor=1;this.stunTimer=0;this.damageTakenMultiplier=1;this.damageFlash=0;this.pulse=Math.random()}drawBase(){ctx.fillStyle=this.damageFlash>0?'white':this.color;this.drawShape(1+Math.sin(this.pulse*Math.PI*2)*0.05)}draw(){ctx.save();ctx.translate(this.x,this.y);this.drawBase();ctx.restore();if(this.hp<this.maxHp){ctx.fillStyle='red';ctx.fillRect(this.x-this.radius,this.y-this.radius-8,this.radius*2,5);ctx.fillStyle='green';ctx.fillRect(this.x-this.radius,this.y-this.radius-8,this.radius*2*(this.hp/this.maxHp),5)}}update(a){this.pulse+=a*0.5;this.damageFlash=Math.max(0,this.damageFlash-a*3);this.stunTimer-=a;if(this.stunTimer>0)return;this.move(a);this.attack()}move(a){let s=this.speed*this.slowFactor;let tx,ty;if(this.targetType==='base'){tx=playerBase.x;ty=playerBase.y}else{let ct=null,md=Infinity;towers.forEach(t=>{const d=Math.hypot(this.x-t.x,this.y-t.y);if(d<md&&t.hp>0){md=d;ct=t}});if(ct){tx=ct.x;ty=ct.y;this.currentTarget=ct}else{tx=playerBase.x;ty=playerBase.y;this.currentTarget=playerBase}}const ang=Math.atan2(ty-this.y,tx-this.x);this.x+=Math.cos(ang)*s*a;this.y+=Math.sin(ang)*s*a}attack(){if(this.targetType==='base'){const d=Math.hypot(this.x-playerBase.x,this.y-playerBase.y);if(d<this.radius+playerBase.size){playerBase.takeDamage(this.damage);this.hp=0}}else{if(this.currentTarget&&this.currentTarget.hp>0){const d=Math.hypot(this.x-this.currentTarget.x,this.y-this.currentTarget.y);if(d<this.radius+this.currentTarget.size/2){this.currentTarget.takeDamage(this.damage);this.hp=0}}}}takeDamage(a){this.damageFlash=1;this.hp-=a*this.damageTakenMultiplier;if(this.hp<=0){gameState.energyCollectedThisRun++;if(permanentUpgrades.scavenger&&Math.random()<0.1)gameState.coins++}}}
+class BlueEnemy extends Enemy{constructor(x,y){super(x,y);this.radius=12;this.color='cyan';this.hp=5+enemyHpBonus;this.maxHp=5+enemyHpBonus;this.damage=1;this.targetType='base'}drawShape(s){const r=this.radius*s;ctx.beginPath();for(let i=0;i<6;i++){ctx.lineTo(r*Math.cos(i*Math.PI/3),r*Math.sin(i*Math.PI/3))}ctx.closePath();ctx.fill()}}
+class YellowEnemy extends Enemy{constructor(x,y){super(x,y);this.radius=12;this.color='gold';this.hp=5+enemyHpBonus;this.maxHp=5+enemyHpBonus;this.damage=1;this.targetType='tower'}drawShape(s){const r=this.radius*s;ctx.beginPath();for(let i=0;i<6;i++){ctx.lineTo(r*Math.cos(i*Math.PI/3),r*Math.sin(i*Math.PI/3))}ctx.closePath();ctx.fill()}}
+class PurpleEnemy extends Enemy{constructor(x,y){super(x,y);this.radius=15;this.color='purple';this.hp=10+enemyHpBonus;this.maxHp=10+enemyHpBonus;this.damage=2;this.targetType='base';this.speed=80}drawShape(s){const r=this.radius*s;ctx.beginPath();for(let i=0;i<6;i++){ctx.lineTo(r*Math.cos(i*Math.PI/3),r*Math.sin(i*Math.PI/3))}ctx.closePath();ctx.fill()}}
+class HealerEnemy extends Enemy{constructor(x,y){super(x,y);this.radius=14;this.color='limegreen';this.hp=15+enemyHpBonus;this.maxHp=15+enemyHpBonus;this.damage=0;this.targetType='base';this.speed=70;this.healRadius=150;this.healCooldown=1;this.healAmount=1}update(a){super.update(a);this.healCooldown-=a;if(this.healCooldown<=0){enemies.forEach(e=>{if(e!==this&&e.hp>0&&e.hp<e.maxHp){if(Math.hypot(this.x-e.x,this.y-e.y)<this.healRadius)e.hp=Math.min(e.maxHp,e.hp+this.healAmount)}});this.healCooldown=1}}draw(){super.draw();ctx.beginPath();ctx.arc(this.x,this.y,this.healRadius,0,2*Math.PI);ctx.strokeStyle='rgba(0,255,0,0.2)';ctx.lineWidth=3;ctx.stroke()}drawShape(s){const r=this.radius*s;ctx.beginPath();ctx.arc(0,0,r,0,Math.PI*2);ctx.fill();ctx.fillStyle='white';const crossSize=r*0.6;ctx.fillRect(-crossSize/2,-2,crossSize,4);ctx.fillRect(-2,-crossSize/2,4,crossSize)}}
+class KamikazeEnemy extends Enemy{constructor(x,y){super(x,y);this.radius=10;this.color='magenta';this.hp=3+enemyHpBonus;this.maxHp=3+enemyHpBonus;this.damage=10;this.targetType='tower';this.speed=180;this.explosionRadius=60}attack(){if(this.currentTarget&&this.currentTarget.hp>0){const d=Math.hypot(this.x-this.currentTarget.x,this.y-this.currentTarget.y);if(d<this.radius+this.currentTarget.size/2){this.explode()}}else if(!this.currentTarget||this.currentTarget.hp<=0){this.explode()}}explode(){this.hp=0;visualEffects.push(new ExplosionVisual(this.x,this.y,this.explosionRadius,'magenta'));towers.forEach(t=>{if(Math.hypot(this.x-t.x,this.y-t.y)<this.explosionRadius)t.takeDamage(this.damage)});if(particles.length<MAX_PARTICLES)for(let i=0;i<30;i++)new Particle(this.x,this.y,'magenta')}drawShape(s){const r=this.radius*s;ctx.beginPath();for(let i=0;i<5;i++){ctx.lineTo(r*Math.cos(i*2*Math.PI/5+Math.PI/2),r*Math.sin(i*2*Math.PI/5+Math.PI/2))}ctx.closePath();ctx.fill()}}
+class BossEnemy extends Enemy {constructor(x,y){super(x,y);this.radius=60;this.color='#333';this.hp=500+gameState.difficultyLevel*50;this.maxHp=this.hp;this.damage=0;this.targetType='base';this.speed=20;this.projectileCooldown=2;this.phaseThresholds=[0.75,0.5,0.25];this.enraged=false;this.eyePulse=0}update(a){super.update(a);this.eyePulse=(this.eyePulse+a*2)%1;this.projectileCooldown-=a;if(this.projectileCooldown<=0){const targetTower=towers[Math.floor(Math.random()*towers.length)];if(targetTower)projectiles.push(new BossProjectile(this.x,this.y,targetTower));this.projectileCooldown=this.enraged?0.5:2}const hpRatio=this.hp/this.maxHp;if(this.phaseThresholds.length>0&&hpRatio<=this.phaseThresholds[0]){this.summonMinions();this.phaseThresholds.shift()}if(!this.enraged&&hpRatio<=0.25)this.enraged=true}summonMinions(){for(let i=0;i<3;i++)spawnEnemy('healer');for(let i=0;i<5;i++)spawnEnemy('kamikaze')}draw(){const r=this.radius;ctx.fillStyle=this.enraged?'#500':this.color;ctx.fillRect(this.x-r,this.y-r,r*2,r*2);const eyeSize=r*0.3+Math.sin(this.eyePulse*Math.PI)*5;ctx.fillStyle=this.enraged?'#ff4d4d':'red';ctx.beginPath();ctx.arc(this.x,this.y,eyeSize,0,Math.PI*2);ctx.fill();if(this.hp<this.maxHp){ctx.fillStyle='red';ctx.fillRect(this.x-this.radius,this.y-this.radius-12,this.radius*2,8);ctx.fillStyle='green';ctx.fillRect(this.x-this.radius,this.y-this.radius-12,this.radius*2*(this.hp/this.maxHp),8)}}}
+class BossProjectile{constructor(x,y,t){this.x=x;this.y=y;this.target=t;this.speed=200;this.radius=10;this.color='red';this.damage=10;this.active=true;this.rotation=0}update(a){this.rotation+=a*5;if(!this.target||this.target.hp<=0){this.active=false;return}const ang=Math.atan2(this.target.y-this.y,this.target.x-this.x);this.x+=Math.cos(ang)*this.speed*a;this.y+=Math.sin(ang)*this.speed*a;if(Math.hypot(this.x-this.target.x,this.y-this.target.y)<this.radius+this.target.size/2){this.target.takeDamage(this.damage);this.active=false}}draw(){ctx.save();ctx.translate(this.x,this.y);ctx.rotate(this.rotation);ctx.fillStyle=this.color;ctx.beginPath();const r=this.radius;ctx.rect(-r/2,-r/2,r,r);ctx.fill();ctx.restore()}}
+class Projectile{constructor(x,y,target,damage){this.x=x;this.y=y;this.damage=damage;this.speed=400;this.radius=4;this.color='lightblue';this.active=true;this.hitEnemies=[];this.isPiercing=permanentUpgrades.projPierce;const ang=Math.atan2(target.y-y,target.x-x);this.dx=Math.cos(ang);this.dy=Math.sin(ang);this.target=this.isPiercing?null:target;this.maxPierce=3;}
+    update(a){if(!this.active)return;if(this.isPiercing){this.x+=this.dx*this.speed*a;this.y+=this.dy*this.speed*a;if(this.x<0||this.x>WORLD_WIDTH||this.y<0||this.y>WORLD_HEIGHT){this.active=false;return}for(const enemy of enemies){if(enemy.hp>0&&!this.hitEnemies.includes(enemy)){const dist=Math.hypot(this.x-enemy.x,this.y-enemy.y);if(dist<this.radius+enemy.radius)this.onHit(enemy)}}}else{if(!this.target||this.target.hp<=0){this.active=false;return}const ang=Math.atan2(this.target.y-this.y,this.target.x-this.x);this.x+=Math.cos(ang)*this.speed*a;this.y+=Math.sin(ang)*this.speed*a;const dist=Math.hypot(this.x-this.target.x,this.y-this.target.y);if(dist<this.radius+this.target.radius){this.onHit(this.target)}}}
+    onHit(enemy){enemy.takeDamage(this.damage);this.hitEnemies.push(enemy);if(this.isPiercing&&this.hitEnemies.length>=this.maxPierce)this.active=false;else if(!this.isPiercing)this.active=false;}
+    draw(){ctx.fillStyle=this.color;ctx.beginPath();ctx.arc(this.x,this.y,this.radius,0,Math.PI*2);ctx.fill()}
+}
+class Rocket extends Projectile{constructor(x,y,t,d,a){super(x,y,t,d);this.isPiercing=false;this.target=t;this.speed=250;this.radius=6;this.color='orangered';this.aoeRadius=a}onHit(enemy){this.explode();this.active=false}explode(){visualEffects.push(new ExplosionVisual(this.x,this.y,this.aoeRadius,'orangered'));enemies.forEach(e=>{const d=Math.hypot(this.x-e.x,this.y-e.y);if(d<this.aoeRadius){e.takeDamage(this.damage)}});if(particles.length < MAX_PARTICLES) for(let i=0;i<20;i++)new Particle(this.x,this.y)}}
+class Particle{constructor(x,y,color='orange'){this.x=x;this.y=y;this.size=Math.random()*5+1;this.speedX=Math.random()*3-1.5;this.speedY=Math.random()*3-1.5;this.lifespan=1;this.color=color}update(a){this.x+=this.speedX;this.y+=this.speedY;this.lifespan-=a}draw(){ctx.globalAlpha=this.lifespan>0?this.lifespan:0;ctx.fillStyle=this.color;ctx.beginPath();ctx.arc(this.x,this.y,this.size,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1}}
+class ExplosionVisual {constructor(x,y,maxRadius,color='red'){this.x=x;this.y=y;this.radius=0;this.maxRadius=maxRadius;this.lifespan=0.4;this.color=color}update(a){this.radius=this.maxRadius*(1-(this.lifespan/0.4)**2);this.lifespan-=a}draw(){ctx.globalAlpha=this.lifespan>0?this.lifespan/0.4:0;ctx.strokeStyle=this.color;ctx.lineWidth=5;ctx.beginPath();ctx.arc(this.x,this.y,this.radius,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1}}
+class RailgunBeam{constructor(x,y,rotation,damage){this.x=x;this.y=y;this.damage=damage;this.lifespan=0.2;this.rotation=rotation;this.endX=this.x+Math.cos(this.rotation)*WORLD_WIDTH*2;this.endY=this.y+Math.sin(this.rotation)*WORLD_WIDTH*2;this.hitEnemies=[];this.applyDamage()}applyDamage(){enemies.forEach(e=>{if(this.isEnemyOnBeam(e)){e.takeDamage(this.damage);this.hitEnemies.push(e)}})}isEnemyOnBeam(e){const d=Math.abs((this.endY-this.y)*e.x-(this.endX-this.x)*e.y+this.endX*this.y-this.endY*this.x)/Math.hypot(this.endY-this.y,this.endX-this.x);return d<e.radius+5}update(a){this.lifespan-=a}draw(){ctx.globalAlpha=this.lifespan>0?this.lifespan/0.2:0;ctx.beginPath();ctx.moveTo(this.x,this.y);ctx.lineTo(this.endX,this.endY);ctx.strokeStyle='#00b4d8';ctx.lineWidth=10;ctx.stroke();ctx.globalAlpha=1}}
+
+// ================================= FUNÇÕES DE CONTROLE DO JOGO =================================
+function startGame(){mainMenu.classList.add('hidden');gameOverScreen.classList.add('hidden');canvas.classList.remove('hidden');gameUI.classList.remove('hidden');resetGameState();lastTime=performance.now();gameLoop(lastTime)}
+function endGame(){if(gameState.animationFrameId){cancelAnimationFrame(gameState.animationFrameId);gameState.animationFrameId=null}permanentUpgrades.energy+=gameState.energyCollectedThisRun;saveProgress();energyCollectedEl.textContent=gameState.energyCollectedThisRun;canvas.classList.add('hidden');gameUI.classList.add('hidden');gameOverScreen.classList.remove('hidden')}
+function returnToMenu(){gameOverScreen.classList.add('hidden');mainMenu.classList.remove('hidden')}
+function spawnEnemy(t){let x,y,e=Math.floor(Math.random()*4);if(e===0){x=Math.random()*WORLD_WIDTH;y=-50}else if(e===1){x=WORLD_WIDTH+50;y=Math.random()*WORLD_HEIGHT}else if(e===2){x=Math.random()*WORLD_WIDTH;y=WORLD_HEIGHT+50}else{x=-50;y=Math.random()*WORLD_HEIGHT}let newEnemy;if(t==='blue')newEnemy=new BlueEnemy(x,y);else if(t==='yellow')newEnemy=new YellowEnemy(x,y);else if(t==='purple')newEnemy=new PurpleEnemy(x,y);else if(t==='healer')newEnemy=new HealerEnemy(x,y);else if(t==='kamikaze')newEnemy=new KamikazeEnemy(x,y);if(newEnemy)enemies.push(newEnemy);}
+function spawnBoss(){const ang=Math.random()*Math.PI*2;const x=WORLD_WIDTH/2+Math.cos(ang)*WORLD_WIDTH*1.8;const y=WORLD_HEIGHT/2+Math.sin(ang)*WORLD_HEIGHT*1.8;enemies.push(new BossEnemy(x,y));gameState.bossActive=true;bossUI.classList.remove('hidden');gameState.bossSpawnedForLevel=gameState.difficultyLevel}
+function lerpAngle(start,end,amt){let diff=(end-start)%(Math.PI*2);if(diff>Math.PI)diff-=Math.PI*2;if(diff<-Math.PI)diff+=Math.PI*2;return start+diff*amt}
+
+function update(a){
+    Object.keys(timers).forEach(k=>timers[k]+=a); gameState.gameTime += a;
+    if(gameState.difficultyLevel>0&&gameState.difficultyLevel%20===0&&!gameState.bossActive&&gameState.bossSpawnedForLevel!==gameState.difficultyLevel){spawnBoss()}
+    
+    towers.forEach(t=>{t.fireRateMultiplier=1;t.isBuffedByConductor=false});
+    towers.forEach(t=>{if(t instanceof ConductorTower){t.findLinks();t.linkedTowers.forEach(lt=>{lt.fireRateMultiplier*=t.fireRateBuff;lt.isBuffedByConductor=true})}});
+    enemies.forEach(e=>{e.targetedBy={projectile:0,rocket:0};e.isSlowed=false;e.slowFactor=1;e.damageTakenMultiplier=1});
+    projectiles.forEach(p=>{if(p.target&&p.target.hp>0){if(p instanceof Rocket)p.target.targetedBy.rocket++;else p.target.targetedBy.projectile++}});
+    towers.forEach(t=>t.damageMultiplier=1);
+    towers.forEach(t=>{if(t instanceof SlowTower){enemies.forEach(e=>{if(Math.hypot(t.x-e.x,t.y-e.y)<t.range){e.isSlowed=true;e.slowFactor=Math.min(e.slowFactor,t.slowFactor);if(permanentUpgrades.slowVulnerability)e.damageTakenMultiplier=1.1}})}if(t instanceof CoinTower&&t.auraRange>0){towers.forEach(at=>{if(at!==t&&at instanceof Tower){if(Math.hypot(t.x-at.x,t.y-at.y)<t.auraRange)at.damageMultiplier=t.auraBuff}})}});
+    
+    const boss=enemies.find(e=>e instanceof BossEnemy);
+    if(!gameState.bossActive || !boss){
+        bossUI.classList.add('hidden');
+        if(gameState.bossActive){gameState.bossActive=false;gameState.coins+=200;permanentUpgrades.energy+=(100+gameState.difficultyLevel*5);updateEnergyUI();saveProgress()}
+        const sa=Math.floor(gameState.difficultyLevel/3)+1;
+        if(timers.coin>=1){gameState.coins++;timers.coin=0}if(timers.spawnBlue>=spawnRates.blue){for(let i=0;i<sa;i++)spawnEnemy('blue');timers.spawnBlue=0}if(timers.spawnYellow>=spawnRates.yellow){for(let i=0;i<sa;i++)spawnEnemy('yellow');timers.spawnYellow=0}if(timers.spawnPurple>=spawnRates.purple){for(let i=0;i<sa;i++)spawnEnemy('purple');timers.spawnPurple=0}
+        if(gameState.difficultyLevel>=10){const advSpawnAmount=Math.floor((gameState.difficultyLevel-10)/3)+1;if(timers.spawnHealer>=spawnRates.healer){for(let i=0;i<advSpawnAmount;i++)spawnEnemy('healer');timers.spawnHealer=0}if(timers.spawnKamikaze>=spawnRates.kamikaze){for(let i=0;i<advSpawnAmount;i++)spawnEnemy('kamikaze');timers.spawnKamikaze=0}}
+    }else{bossHpEl.textContent=`${Math.ceil(boss.hp)}/${boss.maxHp}`}
+    
+    if(timers.difficultyScale>=20){spawnRates.blue=Math.max(0.5,spawnRates.blue-0.7);spawnRates.yellow=Math.max(1,spawnRates.yellow-0.7);spawnRates.purple=Math.max(2,spawnRates.purple-0.7);gameState.difficultyLevel++;timers.difficultyScale=0}
+    if(timers.hpScale>=60){enemyHpBonus++;timers.hpScale=0}
+    if(permanentUpgrades.interest&&timers.interest>=5){gameState.coins+=Math.floor(gameState.coins/100);timers.interest=0}
+    if(permanentUpgrades.towerRepair&&timers.towerRepair>=10){towers.forEach(t=>{if(t.hp<t.maxHp)t.hp=Math.min(t.maxHp,t.hp+1)});timers.towerRepair=0}
+    
+    [towers,enemies,projectiles,particles,visualEffects].forEach(arr=>arr.forEach(o=>o.update(a)));
+    towers=towers.filter(t=>t.hp>0);enemies=enemies.filter(e=>e.hp>0);projectiles=projectiles.filter(p=>p.active);particles=particles.filter(p=>p.lifespan>0);visualEffects=visualEffects.filter(v=>v.lifespan>0);
+}
+function draw(){
+    ctx.save();
+    ctx.translate(-camera.x * camera.zoom + canvas.width / 2, -camera.y * camera.zoom + canvas.height / 2);
+    ctx.scale(camera.zoom, camera.zoom);
+    ctx.fillStyle = '#0d0d0d';
+    ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    playerBase.draw();
+    [visualEffects,towers,enemies,projectiles,particles].forEach(arr=>arr.forEach(o=>o.draw()));
+    if(gameState.placingTower){const m=mousePos;if(m.x>0&&gameState.placingTower.range){ctx.beginPath();ctx.arc(m.x,m.y,gameState.placingTower.range||0,0,2*Math.PI);ctx.strokeStyle='rgba(255,255,255,0.5)';ctx.stroke()}if(m.x>0&&gameState.placingTower.triggerRadius){ctx.beginPath();ctx.arc(m.x,m.y,gameState.placingTower.triggerRadius,0,2*Math.PI);ctx.fillStyle='rgba(255,100,0,0.2)';ctx.fill()}ctx.globalAlpha=0.6;TOWER_TYPES[gameState.placingTower.type].constructor(m.x,m.y).drawBase();ctx.globalAlpha=1}
+    if(gameState.selectedTowerForUpgrade){const t=gameState.selectedTowerForUpgrade;ctx.strokeStyle='gold';ctx.lineWidth=3/camera.zoom;ctx.beginPath();ctx.arc(t.x,t.y,t.size,0,Math.PI*2);ctx.stroke();}
+    ctx.restore();
+}
+function updateUI(){baseHpEl.textContent=`${playerBase.hp}/${playerBase.maxHp}`;coinsEl.textContent=gameState.coins;gameTimeEl.textContent=Math.floor(gameState.gameTime);difficultyLevelEl.textContent=gameState.difficultyLevel}
+function gameLoop(a){if(gameState.gameOver){endGame();return}const dt=(a-lastTime)/1000||0;lastTime=a;if(!gameState.isPaused)update(dt);draw();updateUI();gameState.animationFrameId=requestAnimationFrame(gameLoop)}
+
+// ================================= FUNÇÕES DE UI E EVENTOS =================================
+function closeAllModals(){shopModal.style.display='none';upgradeModal.style.display='none';massUpgradeModal.style.display='none';permUpgradesModal.style.display='none';gameState.selectedTowerForUpgrade=null;if(gameState && !gameState.placingTower)gameState.isPaused=false;}
+function getMouseWorldPos(e){const rect=canvas.getBoundingClientRect();const touch=e.touches?e.touches[0]:e;return{x:(touch.clientX-rect.left)/camera.zoom+camera.x-canvas.width/(2*camera.zoom),y:(touch.clientY-rect.top)/camera.zoom+camera.y-canvas.height/(2*camera.zoom)}}
+function getTowerCost(baseCost) { return Math.max(1, baseCost - (permanentUpgrades.towerCostDown ? 1 : 0)); }
+function sellTower(){if(!gameState.selectedTowerForUpgrade)return;const sellValue=Math.floor(getTowerCost(gameState.selectedTowerForUpgrade.baseCost)*0.5);gameState.coins+=sellValue;towers=towers.filter(t=>t!==gameState.selectedTowerForUpgrade);closeAllModals()}
+function openShopModal(){gameState.placingTower=null;gameState.isPaused=true;shopList.innerHTML='';for(const type in TOWER_TYPES){const info=TOWER_TYPES[type];const finalCost=getTowerCost(info.cost);const item=document.createElement('div');item.className='shop-item';item.dataset.type=type;item.innerHTML=`<span class="item-title">${info.name}</span><span class="cost">${finalCost} 🪙</span><div class="item-desc">${info.desc}</div>`;shopList.appendChild(item)}shopModal.style.display='block'}
+function openUpgradeModal(t){closeAllModals();gameState.isPaused=true;gameState.selectedTowerForUpgrade=t;if(t.level>=t.maxLevel){upgradeInfoEl.innerHTML=`<div>Nível Máximo Atingido!</div>`;upgradeButton.style.display='none'}else{const c=t.getUpgradeCost();upgradeInfoEl.innerHTML=`<div>Nível Atual: ${t.level}</div><div>Próximo Nível: ${t.level+1}</div><div>Custo: <span style="color: gold;">${c} 🪙</span></div>`;upgradeButton.style.display='block';upgradeButton.disabled=gameState.coins<c}if(permanentUpgrades.recycling){sellButton.classList.remove('hidden');sellButton.innerHTML=`Vender por ${Math.floor(getTowerCost(t.baseCost)*0.5)} 🪙`}else{sellButton.classList.add('hidden')}upgradeModal.style.display='block'}
+function openMassUpgradeModal() {closeAllModals();gameState.isPaused = true;massUpgradeList.innerHTML = '';const towerOrder = Object.keys(TOWER_TYPES);towerOrder.forEach(type => {const info = TOWER_TYPES[type];const data = calculateMassUpgrade(type);const item = document.createElement('div');item.className = 'mass-upgrade-item';if (data.towers.length > 0) {item.innerHTML = `Melhorar ${data.towers.length} de ${info.name}<span class="cost">${data.cost} 🪙</span>`;item.classList.toggle('disabled', gameState.coins < data.cost);item.onclick=()=>performMassUpgrade(type)} else {item.innerHTML = `Nenhuma de ${info.name} para melhorar`;item.classList.add('disabled');}massUpgradeList.appendChild(item);});massUpgradeModal.style.display = 'block';}
+function calculateMassUpgrade(type){let cost=0,towersToUpgrade=[];towers.filter(o=>o.type===type&&o.level<o.maxLevel).forEach(o=>{cost+=o.getUpgradeCost();towersToUpgrade.push(o)});return{cost:cost,towers:towersToUpgrade}}
+function performMassUpgrade(type){const{cost,towers:towersToUpgrade}=calculateMassUpgrade(type);if(towersToUpgrade.length>0&&gameState.coins>=cost){gameState.coins-=cost;towersToUpgrade.forEach(t=>t.applyUpgrade())}openMassUpgradeModal();}
+function handleShopItemClick(e) {const item = e.target.closest('.shop-item');if (!item) return;const type = item.dataset.type;const info = TOWER_TYPES[type];const finalCost = getTowerCost(info.cost);if (gameState.coins >= finalCost) {const tempTower = info.constructor(0, 0);gameState.placingTower = {type: type,baseCost: info.cost,range: tempTower.range,triggerRadius: tempTower.triggerRadius,};closeAllModals();gameState.isPaused = false;} else {alert('Moedas insuficientes!');}}
+function handleCanvasClick(e) {if (gameState.isPaused) return;mousePos = getMouseWorldPos(e);if (gameState.placingTower) {const finalCost = getTowerCost(gameState.placingTower.baseCost);if (gameState.coins >= finalCost) {gameState.coins -= finalCost;const newTower = TOWER_TYPES[gameState.placingTower.type].constructor(mousePos.x, mousePos.y);towers.push(newTower);}gameState.placingTower = null;} else {let clickedTower = null;for (const t of towers) {if (Math.hypot(mousePos.x - t.x, mousePos.y - t.y) < t.size) {clickedTower = t;break;}}if (clickedTower) {openUpgradeModal(clickedTower);}}}
+window.addEventListener('resize',()=>{const vpWidth=window.innerWidth,vpHeight=window.innerHeight;let newWidth,newHeight;if(vpWidth/vpHeight>ASPECT_RATIO){newHeight=vpHeight;newWidth=vpHeight*ASPECT_RATIO}else{newWidth=vpWidth;newHeight=vpWidth/ASPECT_RATIO}canvas.width=newWidth;canvas.height=newHeight;camera.zoom=1.2});
+shopIcon.addEventListener('click', openShopModal);
+massUpgradeIcon.addEventListener('click', openMassUpgradeModal);
+upgradeButton.addEventListener('click',()=>{if(gameState.selectedTowerForUpgrade){gameState.selectedTowerForUpgrade.tryUpgrade();openUpgradeModal(gameState.selectedTowerForUpgrade)}});
+shopList.addEventListener('click', handleShopItemClick);
+canvas.addEventListener('click', handleCanvasClick);
+canvas.addEventListener('contextmenu', e => {e.preventDefault();if (gameState.placingTower) {gameState.placingTower = null;}});
+function updateMousePosition(e) {if (gameState && !gameState.isPaused) {mousePos = getMouseWorldPos(e);}}
+document.body.addEventListener('mousemove', updateMousePosition);
+document.body.addEventListener('touchmove', e => {if (gameState && !gameState.isPaused) {e.preventDefault();updateMousePosition(e);}}, { passive: false });
+
+// ================================= TECLA DE ATALHO PARA TESTES =================================
+let testModeActivated=false;
+window.addEventListener('keydown',(event)=>{if(event.key.toLowerCase()==='p'){if(testModeActivated)return;UPGRADES_CONFIG.forEach(upg=>{permanentUpgrades[upg.id]=true});testModeActivated=true;alert("MODO DE TESTE ATIVADO: Todas as melhorias permanentes foram habilitadas para esta sessão. O jogo será reiniciado para aplicar as mudanças.");if(gameState&&gameState.animationFrameId)cancelAnimationFrame(gameState.animationFrameId);startGame()}});
+
+// ================================= INICIAR O SCRIPT =================================
+loadProgress();
+window.dispatchEvent(new Event('resize'));
+
+// Registro do PWA Service Worker
+if('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js')
+            .then(registration => {
+                console.log('ServiceWorker registrado com sucesso: ', registration.scope);
+            }, err => {
+                console.log('Falha no registro do ServiceWorker: ', err);
+            });
+    });
+}
+</script>
+</body>
+</html>
