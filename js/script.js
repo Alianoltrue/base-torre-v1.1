@@ -25,7 +25,7 @@ const canvas = document.getElementById("gameCanvas"),
 	totalEnergyUpgradesEl = document.getElementById("total-energy-upgrades"),
 	energyCollectedEl = document.getElementById("energy-collected"),
 	ASPECT_RATIO = 16 / 9,
-	WORLD_WIDTH = 2800,
+	WORLD_WIDTH = 1920,
 	WORLD_HEIGHT = WORLD_WIDTH / ASPECT_RATIO,
 	MAX_PARTICLES = 200;
 let camera = { x: WORLD_WIDTH / 2, y: WORLD_HEIGHT / 2, zoom: 1 },
@@ -1114,55 +1114,49 @@ class Projectile {
 			(this.speed = 400),
 			(this.radius = 4),
 			(this.color = "lightblue"),
-			(this.active = !0),
+			(this.active = true),
 			(this.hitEnemies = []),
-			(this.isPiercing = permanentUpgrades.projPierce);
+			(this.isPiercing = permanentUpgrades.projPierce),
+			(this.enemyHit = false);
 		const i = Math.atan2(a.y - t, a.x - e);
-		(this.dx = Math.cos(i)),
-			(this.dy = Math.sin(i)),
-			(this.target = this.isPiercing ? null : a),
-			(this.maxPierce = 3);
+		(this.dx = Math.cos(i)), (this.dy = Math.sin(i)), (this.target = a), (this.maxPierce = 3);
 	}
 	update(e) {
 		if (!this.active) return;
 
-		if (this.isPiercing) {
-			this.x += this.dx * this.speed * e;
-			this.y += this.dy * this.speed * e;
-
-			// fora do mundo
-			if (this.x < 0 || this.x > WORLD_WIDTH || this.y < 0 || this.y > WORLD_HEIGHT) {
-				this.active = false;
-				return;
-			}
-			// colisão com inimigos
-			enemies.forEach((enemy) => {
-				if (
-					enemy.hp > 0 &&
-					!this.hitEnemies.includes(enemy) &&
-					Math.hypot(this.x - enemy.x, this.y - enemy.y) < this.radius + enemy.radius
-				) {
-					this.onHit(enemy);
-				}
-			});
-		} else {
-			// projétil normal
-			if (!this.target || this.target.hp <= 0) {
-				this.active = false;
-				return;
-			}
-
-			const angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
-			this.x += Math.cos(angle) * this.speed * e;
-			this.y += Math.sin(angle) * this.speed * e;
-
-			if (
-				Math.hypot(this.x - this.target.x, this.y - this.target.y) <
-				this.radius + this.target.radius
-			) {
-				this.onHit(this.target);
-			}
+		// Fora do mundo
+		if (this.x < 0 || this.x > WORLD_WIDTH || this.y < 0 || this.y > WORLD_HEIGHT) {
+			this.active = false;
+			return;
 		}
+
+		let moveX, moveY; // Variáveis para manutenção da trajetória antes e depois de acertar
+
+		if ((this.isPiercing && this.enemyHit) || this.target.hp < 1) {
+			// Segue em linha reta depois do primeiro acerto ou caso o alvo "morra" antes da hora
+			moveX = this.dx * this.speed * e;
+			moveY = this.dy * this.speed * e;
+		} else {
+			// Aqui faz com que o projétil corrija sua coordenada em direção ao alvo
+			const angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+			moveX = Math.cos(angle) * this.speed * e;
+			moveY = Math.sin(angle) * this.speed * e;
+		}
+
+		this.x += moveX;
+		this.y += moveY;
+
+		// Colisão com inimigos
+		enemies.forEach((enemy) => {
+			if (
+				enemy.hp > 0 &&
+				!this.hitEnemies.includes(enemy) &&
+				Math.hypot(this.x - enemy.x, this.y - enemy.y) < this.radius + enemy.radius
+			) {
+				this.onHit(enemy);
+				if (this.isPiercing) this.enemyHit = true;
+			}
+		});
 	}
 
 	onHit(e) {
