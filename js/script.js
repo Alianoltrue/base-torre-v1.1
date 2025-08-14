@@ -1125,25 +1125,46 @@ class Projectile {
 	}
 	update(e) {
 		if (!this.active) return;
+
 		if (this.isPiercing) {
-			(this.x += this.dx * this.speed * e),
-				(this.y += this.dy * this.speed * e),
-				this.x < 0 || this.x > WORLD_WIDTH || this.y < 0 || this.y > WORLD_HEIGHT
-					? (this.active = !1)
-					: enemies.forEach((e) => {
-							e.hp > 0 &&
-								!this.hitEnemies.includes(e) &&
-								Math.hypot(this.x - e.x, this.y - e.y) < this.radius + e.radius &&
-								this.onHit(e);
-					  });
-		} else (!this.target || this.target.hp <= 0) && (this.active = !1);
-		if (!this.active) return;
-		const t = Math.atan2(this.target.y - this.y, this.target.x - this.x);
-		(this.x += Math.cos(t) * this.speed * e),
-			(this.y += Math.sin(t) * this.speed * e),
-			Math.hypot(this.x - this.target.x, this.y - this.target.y) <
-				this.radius + this.target.radius && this.onHit(this.target);
+			this.x += this.dx * this.speed * e;
+			this.y += this.dy * this.speed * e;
+
+			// fora do mundo
+			if (this.x < 0 || this.x > WORLD_WIDTH || this.y < 0 || this.y > WORLD_HEIGHT) {
+				this.active = false;
+				return;
+			}
+			// colisão com inimigos
+			enemies.forEach((enemy) => {
+				if (
+					enemy.hp > 0 &&
+					!this.hitEnemies.includes(enemy) &&
+					Math.hypot(this.x - enemy.x, this.y - enemy.y) < this.radius + enemy.radius
+				) {
+					this.onHit(enemy);
+				}
+			});
+		} else {
+			// projétil normal
+			if (!this.target || this.target.hp <= 0) {
+				this.active = false;
+				return;
+			}
+
+			const angle = Math.atan2(this.target.y - this.y, this.target.x - this.x);
+			this.x += Math.cos(angle) * this.speed * e;
+			this.y += Math.sin(angle) * this.speed * e;
+
+			if (
+				Math.hypot(this.x - this.target.x, this.y - this.target.y) <
+				this.radius + this.target.radius
+			) {
+				this.onHit(this.target);
+			}
+		}
 	}
+
 	onHit(e) {
 		e.takeDamage(this.damage),
 			this.hitEnemies.push(e),
@@ -1501,9 +1522,11 @@ function closeAllModals() {
 	(shopModal.style.display = "none"),
 		(upgradeModal.style.display = "none"),
 		(massUpgradeModal.style.display = "none"),
-		(permUpgradesModal.style.display = "none"),
-		(gameState.selectedTowerForUpgrade = null),
-		gameState && !gameState.placingTower && (gameState.isPaused = !1);
+		(permUpgradesModal.style.display = "none");
+	if (gameState) {
+		!gameState.placingTower && (gameState.isPaused = !1),
+			(gameState.selectedTowerForUpgrade = null);
+	}
 }
 function getMouseWorldPos(e) {
 	const t = canvas.getBoundingClientRect(),
@@ -1596,8 +1619,6 @@ function handleShopItemClick(e) {
 	const a = t.dataset.type,
 		s = TOWER_TYPES[a],
 		i = getTowerCost(s.cost);
-	console.log(s);
-	console.log(gameState);
 	gameState.coins >= i
 		? ((gameState.placingTower = {
 				type: a,
