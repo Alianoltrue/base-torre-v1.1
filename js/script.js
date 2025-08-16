@@ -1284,6 +1284,7 @@ class RailgunBeam {
 	}
 }
 function startGame() {
+	adjustViewport();
 	mainMenu.classList.add("hidden"),
 		gameOverScreen.classList.add("hidden"),
 		canvas.classList.remove("hidden"),
@@ -1460,7 +1461,7 @@ function draw() {
 			-camera.y * camera.zoom + canvas.height / 2,
 		),
 		ctx.scale(camera.zoom, camera.zoom),
-		(ctx.fillStyle = "#0d0d0d"),
+		(ctx.fillStyle = "#000"),
 		ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT),
 		playerBase.draw(),
 		[visualEffects, towers, enemies, projectiles, particles].forEach((e) =>
@@ -1622,7 +1623,7 @@ function handleShopItemClick(e) {
 		  }),
 		  closeAllModals(),
 		  (gameState.isPaused = !1))
-		: alert("Moedas insuficientes!");
+		: popNotifica("Moedas insuficientes!", false);
 }
 function handleCanvasClick(e) {
 	if (gameState.isPaused) return;
@@ -1645,14 +1646,39 @@ function handleCanvasClick(e) {
 		e && openUpgradeModal(e);
 	}
 }
-window.addEventListener("resize", () => {
+
+function adjustViewport() {
 	const e = window.innerWidth,
 		t = window.innerHeight;
 	let a, s;
+
+	// Calcula o zoom necessário para que o mundo inteiro caiba na tela
+	const zoomToFit = Math.min(canvas.width / WORLD_WIDTH, canvas.height / WORLD_HEIGHT);
+
 	e / t > ASPECT_RATIO ? ((s = t), (a = t * ASPECT_RATIO)) : ((a = e), (s = e / ASPECT_RATIO)),
 		(canvas.width = a),
 		(canvas.height = s),
-		(camera.zoom = 0.8);
+		// Limita o zoom da câmera a uma faixa de 0.4 a 1.3
+		(camera.zoom = Math.max(0.4, Math.min(1.3, zoomToFit)));
+}
+
+// Modal pop-up de notificação
+function popNotifica(message, success) {
+	if (document.querySelector(".pop-notifica")) {
+		document.querySelector(".pop-notifica").remove();
+	}
+	const popDiv = document.createElement("div");
+	popDiv.classList.add("pop-notifica");
+	popDiv.classList.add(success ? "success" : "error");
+	popDiv.textContent = message;
+	document.body.appendChild(popDiv);
+	setTimeout(() => {
+		if (popDiv) popDiv.remove();
+	}, 3000);
+}
+
+window.addEventListener("resize", () => {
+	adjustViewport();
 }),
 	shopIcon.addEventListener("click", openShopModal),
 	massUpgradeIcon.addEventListener("click", openMassUpgradeModal),
@@ -1685,12 +1711,14 @@ window.addEventListener("keydown", (e) => {
 			permanentUpgrades[e.id] = !0;
 		}),
 			(testModeActivated = !0),
-			alert(
-				"MODO DE TESTE ATIVADO: Todas as melhorias permanentes foram habilitadas para esta sessão. O jogo será reiniciado para aplicar as mudanças.",
-			),
-			gameState &&
-				gameState.animationFrameId &&
-				cancelAnimationFrame(gameState.animationFrameId),
+			popNotifica(
+				`MODO DE TESTE ATIVADO: Todas as melhorias permanentes foram habilitadas para esta sessão. \n
+				O jogo será reiniciado para aplicar as mudanças.`,
+				true,
+			);
+		gameState &&
+			gameState.animationFrameId &&
+			cancelAnimationFrame(gameState.animationFrameId),
 			startGame();
 	}
 }),

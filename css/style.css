@@ -111,7 +111,7 @@ h1 {
 	padding: 20px;
 	border: 2px solid #666;
 	border-radius: 10px;
-	z-index: 100;
+	z-index: 2;
 	width: 80vw;
 	max-width: 500px;
 	max-height: 80vh;
@@ -182,4 +182,26 @@ h1 {
 }
 .purchased .energy-cost {
 	text-decoration: line-through;
+}
+.pop-notifica {
+	position: fixed;
+	top: 110px;
+	right: 10px;
+	z-index: 3;
+	padding: 12px 12px;
+	border-radius: 8px;
+	color: #fff;
+	font-size: 16px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+	pointer-events: none;
+}
+
+.pop-notifica.success {
+	background-color: #228a4d; /* Verde */
+	border-left: 6px solid #1b7e44;
+}
+
+.pop-notifica.error {
+	background-color: #e74c3c; /* Vermelho */
+	border-left: 6px solid #c0392b;
 }
