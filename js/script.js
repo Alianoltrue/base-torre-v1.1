@@ -1021,7 +1021,7 @@ class BossEnemy extends Enemy {
 			(this.color = "#333"),
 			(this.hp = 500 + 50 * gameState.difficultyLevel),
 			(this.maxHp = this.hp),
-			(this.damage = 0),
+			(this.damage = this.hp * 0.05),
 			(this.targetType = "base"),
 			(this.speed = 20),
 			(this.projectileCooldown = 2),
@@ -1087,8 +1087,8 @@ class BossProjectile {
 			(this.rotation = 0);
 	}
 	update(e) {
-		(this.rotation += 5 * e), (!this.target || this.target.hp <= 0) && (this.active = !1);
 		if (!this.active) return;
+		this.rotation += 5 * e;
 		const t = Math.atan2(this.target.y - this.y, this.target.x - this.x);
 		(this.x += Math.cos(t) * this.speed * e),
 			(this.y += Math.sin(t) * this.speed * e),
@@ -1330,11 +1330,10 @@ function spawnEnemy(e) {
 		i && enemies.push(i);
 }
 function spawnBoss() {
-	const e = 2 * Math.random() * Math.PI,
-		t = WORLD_WIDTH / 2 + 1.8 * Math.cos(e) * WORLD_WIDTH,
-		a = WORLD_HEIGHT / 2 + 1.8 * Math.sin(e) * WORLD_HEIGHT;
+	const t = -150,
+		a = -50;
 	enemies.push(new BossEnemy(t, a)),
-		(gameState.bossActive = !0),
+		(gameState.bossActive = true),
 		bossUI.classList.remove("hidden"),
 		(gameState.bossSpawnedForLevel = gameState.difficultyLevel);
 }
@@ -1369,11 +1368,10 @@ function update(e) {
 				(e.damageTakenMultiplier = 1);
 		}),
 		projectiles.forEach((e) => {
-			e.target &&
-				e.target.hp > 0 &&
-				(e instanceof Rocket
-					? e.target.targetedBy.rocket++
-					: e.target.targetedBy.projectile++);
+			// TODO Verificar o que isso aqui faz...
+			// if (e.target && e.target.hp > 0) {
+			// 	e instanceof Rocket ? e.target.targetedBy.rocket++ : e.target.targetedBy.projectile++;
+			// }
 		}),
 		towers.forEach((e) => (e.damageMultiplier = 1)),
 		towers.forEach((e) => {
@@ -1393,18 +1391,20 @@ function update(e) {
 							(t.damageMultiplier = e.auraBuff);
 					});
 		});
+	if (timers.coin >= 1) gameState.coins++, (timers.coin = 0);
 	const t = enemies.find((e) => e instanceof BossEnemy);
 	if (gameState.bossActive && t) bossHpEl.textContent = `${Math.ceil(t.hp)}/${t.maxHp}`;
 	else {
-		bossUI.classList.add("hidden"),
-			gameState.bossActive &&
-				((gameState.bossActive = !1),
-				(gameState.coins += 200),
-				(permanentUpgrades.energy += 100 + 5 * gameState.difficultyLevel),
-				updateEnergyUI(),
-				saveProgress());
+		bossUI.classList.add("hidden");
+		if (gameState.bossActive) {
+			gameState.bossActive = false;
+			gameState.coins += 200;
+			permanentUpgrades.energy += 100 + 5 * gameState.difficultyLevel;
+			updateEnergyUI();
+			saveProgress();
+		}
 		const e = Math.floor(gameState.difficultyLevel / 3) + 1;
-		if (timers.coin >= 1) gameState.coins++, (timers.coin = 0);
+
 		if (timers.spawnBlue >= spawnRates.blue) {
 			for (let t = 0; t < e; t++) spawnEnemy("blue");
 			timers.spawnBlue = 0;
